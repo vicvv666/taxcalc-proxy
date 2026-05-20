@@ -7,11 +7,17 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0f1e;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh}
-.container{max-width:960px;margin:0 auto;padding:20px 16px}
-h1{font-size:24px;margin-bottom:20px;color:#10b981}
+.container{max-width:1100px;margin:0 auto;padding:20px 16px}
+h1{font-size:24px;margin-bottom:16px;color:#10b981}
+h2{font-size:18px;color:#10b981;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:rgba(30,41,59,.8);border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:16px;text-align:center}
+.stat-card .num{font-size:28px;font-weight:700;color:#10b981}
+.stat-card .label{font-size:13px;color:#94a3b8;margin-top:4px}
+.stat-card.pro .num{color:#f59e0b}
+.stat-card.free .num{color:#94a3b8}
 .card{background:rgba(30,41,59,.8);border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:20px;margin-bottom:16px}
-.card h2{font-size:18px;color:#10b981;margin-bottom:12px}
-input,select{background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.3);color:#e5e7eb;padding:10px 14px;border-radius:8px;font-size:14px;width:100%;margin-bottom:8px}
+input,select,textarea{background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.3);color:#e5e7eb;padding:10px 14px;border-radius:8px;font-size:14px;width:100%;margin-bottom:8px}
 input:focus,select:focus{outline:none;border-color:#10b981}
 button{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-right:8px;margin-bottom:8px}
 button:hover{opacity:.9}
@@ -23,26 +29,32 @@ button.secondary{background:rgba(71,85,105,.8);border:1px solid rgba(148,163,184
 .badge-pro{background:rgba(16,185,129,.2);color:#10b981}
 .badge-expired{background:rgba(239,68,68,.2);color:#ef4444}
 table{width:100%;border-collapse:collapse;margin-top:8px}
-th,td{padding:8px 12px;text-align:left;border-bottom:1px solid rgba(148,163,184,.15)}
-th{color:#94a3b8;font-size:13px}
-td{font-size:14px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid rgba(148,163,184,.15);font-size:13px}
+th{color:#94a3b8;font-size:12px;position:sticky;top:0;background:#1e293b}
+tr:hover{background:rgba(16,185,129,.05)}
+td button{padding:4px 10px;font-size:12px;margin:0 2px}
 .login-box{text-align:center;padding:60px 20px}
 .login-box h1{font-size:32px}
 .login-box p{color:#94a3b8;margin:12px 0 24px}
-.tabs{display:flex;gap:4px;margin-bottom:16px}
-.tab-btn{padding:8px 16px;background:rgba(71,85,105,.5);border:1px solid rgba(148,163,184,.2);color:#94a3b8;border-radius:8px;cursor:pointer;font-size:14px}
+.tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
+.tab-btn{padding:8px 16px;background:rgba(71,85,105,.5);border:1px solid rgba(148,163,184,.2);color:#94a3b8;border-radius:8px;cursor:pointer;font-size:13px;white-space:nowrap}
 .tab-btn.active{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.4);color:#10b981}
-.tab-content{display:none}
-.tab-content.active{display:block}
+.tab-content{display:none}.tab-content.active{display:block}
 .flash{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:14px}
 .flash-ok{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3)}
 .flash-err{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.paginator{display:flex;gap:8px;align-items:center;margin-top:12px;justify-content:center}
+.paginator button{padding:6px 12px}
+.paginator span{color:#94a3b8;font-size:13px}
+.filter-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.filter-bar select,.filter-bar input{width:auto;margin:0}
+.overflow-table{overflow-x:auto;border-radius:8px;border:1px solid rgba(148,163,184,.15)}
+.row-actions{white-space:nowrap}
 </style>
 </head>
 <body>
 <div class="container">
 
-<!-- Login Section -->
 <div id="loginSection" class="login-box">
 <h1>🧮 稅算寶 Admin</h1>
 <p>會員管理後台</p>
@@ -51,12 +63,17 @@ td{font-size:14px}
 <button onclick="doLogin()">登入</button>
 </div>
 
-<!-- Admin Section -->
 <div id="adminSection" style="display:none">
-<h1>🧮 稅算寶 Admin</h1>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+<h1 style="margin:0">🧮 稅算寶 Admin</h1>
+<button class="secondary" onclick="doLogout()">登出</button>
+</div>
+
+<div id="statsArea" class="stats"></div>
 
 <div class="tabs">
-<div class="tab-btn active" onclick="switchTab('lookup')">🔍 查詢用戶</div>
+<div class="tab-btn active" onclick="switchTab('users')">👥 用戶列表</div>
+<div class="tab-btn" onclick="switchTab('lookup')">🔍 查詢用戶</div>
 <div class="tab-btn" onclick="switchTab('membership')">👑 會員管理</div>
 <div class="tab-btn" onclick="switchTab('payment')">💰 付款記錄</div>
 <div class="tab-btn" onclick="switchTab('batch')">📦 批量操作</div>
@@ -64,11 +81,32 @@ td{font-size:14px}
 
 <div id="flash"></div>
 
+<!-- Tab: Users List -->
+<div id="tab-users" class="tab-content active">
+<div class="filter-bar">
+<select id="filterMem" onchange="loadUsers(1)">
+<option value="">全部</option>
+<option value="pro">Pro 會員</option>
+<option value="free">Free 用戶</option>
+</select>
+<input type="text" id="searchUser" placeholder="搜索用戶名..." style="width:200px" onkeydown="if(event.key==='Enter')loadUsers(1)">
+<button onclick="loadUsers(1)">搜索</button>
+<button class="secondary" onclick="loadUsers(1);loadStats()">🔄 刷新</button>
+</div>
+<div class="overflow-table">
+<table id="usersTable">
+<thead><tr><th>用戶名</th><th>ID</th><th>會員</th><th>到期</th><th>首次登入</th><th>最近活躍</th><th>操作</th></tr></thead>
+<tbody id="usersBody"></tbody>
+</table>
+</div>
+<div id="usersPager" class="paginator"></div>
+</div>
+
 <!-- Tab: Lookup -->
-<div id="tab-lookup" class="tab-content active">
+<div id="tab-lookup" class="tab-content">
 <div class="card">
 <h2>🔍 查詢用戶</h2>
-<input type="text" id="lookupUser" placeholder="用戶名">
+<input type="text" id="lookupUser" placeholder="用戶名" onkeydown="if(event.key==='Enter')lookupUser()">
 <button onclick="lookupUser()">查詢</button>
 <div id="lookupResult" class="result" style="display:none"></div>
 </div>
@@ -80,8 +118,8 @@ td{font-size:14px}
 <h2>👑 設置會員</h2>
 <input type="text" id="memUser" placeholder="用戶名">
 <select id="memLevel">
-<option value="free">Free 免費</option>
 <option value="pro">Pro 專業版</option>
+<option value="free">Free 免費</option>
 </select>
 <select id="memDuration">
 <option value="30">30天</option>
@@ -90,8 +128,7 @@ td{font-size:14px}
 <option value="365">365天</option>
 <option value="9999">永久</option>
 </select>
-<button onclick="setMembership()">設置會員</button>
-<button class="danger" onclick="revokeMembership()">取消會員</button>
+<button onclick="setMembership()">✅ 確認設置</button>
 </div>
 </div>
 
@@ -112,9 +149,14 @@ td{font-size:14px}
 <option value="paypal">PayPal</option>
 <option value="manual">手動確認</option>
 </select>
-<input type="text" id="payAmount" placeholder="金額（可選，覆蓋默認）">
+<input type="text" id="payAmount" placeholder="金額（可選）">
 <input type="text" id="payNote" placeholder="備註（可選）">
 <button onclick="addPayment()">記錄付款</button>
+</div>
+<div class="card">
+<h2>📋 最近付款</h2>
+<button class="secondary" onclick="loadPayments()">刷新</button>
+<div id="paymentsArea" class="overflow-table" style="margin-top:8px"></div>
 </div>
 </div>
 
@@ -122,7 +164,7 @@ td{font-size:14px}
 <div id="tab-batch" class="tab-content">
 <div class="card">
 <h2>📦 批量操作</h2>
-<p style="color:#94a3b8;margin-bottom:12px">用逗號分隔多個用戶名</p>
+<p style="color:#94a3b8;margin-bottom:12px">用逗號或換行分隔多個用戶名</p>
 <textarea id="batchUsers" placeholder="user1,user2,user3" style="width:100%;height:80px;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.3);color:#e5e7eb;padding:10px;border-radius:8px;font-size:14px;margin-bottom:8px"></textarea>
 <select id="batchMemLevel">
 <option value="pro">升級 Pro</option>
@@ -145,6 +187,7 @@ td{font-size:14px}
 <script>
 var API='https://taxcalc-proxy.onrender.com';
 var TOKEN='';
+var currentPage=1;
 
 function flash(msg,ok){
  var el=document.getElementById('flash');
@@ -158,8 +201,7 @@ async function doLogin(){
  if(!pass)return flash('請輸入密碼',false);
  try{
   var r=await fetch(API+'/admin/login',{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
+   method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({password:pass})
   });
   var d=await r.json();
@@ -168,21 +210,28 @@ async function doLogin(){
    document.getElementById('loginSection').style.display='none';
    document.getElementById('adminSection').style.display='block';
    flash('登入成功！',true);
-  }else{
-   flash(d.error||'登入失敗',false);
-  }
+   loadStats();
+   loadUsers(1);
+  }else{flash(d.error||'登入失敗',false);}
  }catch(e){flash('連接錯誤: '+e.message,false);}
 }
 
+function doLogout(){
+ TOKEN='';
+ document.getElementById('loginSection').style.display='';
+ document.getElementById('adminSection').style.display='none';
+}
+
 function switchTab(name){
- document.querySelectorAll('.tab-btn').forEach(function(b,i){
-  b.classList.toggle('active',b.textContent.includes(
-   {lookup:'查詢',membership:'會員',payment:'付款',batch:'批量'}[name]
-  ));
+ document.querySelectorAll('.tab-btn').forEach(function(b){
+  var map={users:'用戶列表',lookup:'查詢',membership:'會員',payment:'付款',batch:'批量'};
+  b.classList.toggle('active',b.textContent.includes(map[name]||''));
  });
  document.querySelectorAll('.tab-content').forEach(function(c){
   c.classList.toggle('active',c.id==='tab-'+name);
  });
+ if(name==='users')loadUsers(currentPage);
+ if(name==='payment')loadPayments();
 }
 
 async function api(path,method,data){
@@ -192,42 +241,99 @@ async function api(path,method,data){
  return await r.json();
 }
 
+async function loadStats(){
+ var d=await api('/admin/stats');
+ if(!d.ok)return;
+ var s=d;
+ document.getElementById('statsArea').innerHTML=
+  '<div class="stat-card"><div class="num">'+s.total_users+'</div><div class="label">總用戶</div></div>'+
+  '<div class="stat-card pro"><div class="num">'+s.pro_active+'</div><div class="label">Pro 活躍</div></div>'+
+  '<div class="stat-card free"><div class="num">'+s.free_users+'</div><div class="label">Free 用戶</div></div>'+
+  '<div class="stat-card"><div class="num">'+s.total_payments+'</div><div class="label">付款記錄</div></div>'+
+  '<div class="stat-card"><div class="num">'+s.active_7d+'</div><div class="label">7日活躍</div></div>';
+}
+
+async function loadUsers(page){
+ currentPage=page;
+ var mem=document.getElementById('filterMem').value;
+ var search=document.getElementById('searchUser').value.trim();
+ var url='/admin/users?page='+page+'&per_page=50';
+ if(mem)url+='&membership='+mem;
+ var d=await api(url);
+ if(!d.ok)return flash(d.error,false);
+ 
+ var tbody=document.getElementById('usersBody');
+ var rows=d.users;
+ if(search)rows=rows.filter(function(u){return u.username.includes(search);});
+ 
+ tbody.innerHTML=rows.map(function(u){
+  var memBadge=u.membership==='pro'?'<span class="badge badge-pro">Pro</span>':'<span class="badge badge-free">Free</span>';
+  var expStr='';
+  if(u.expires_at){
+   var expDate=new Date(u.expires_at*1000);
+   if(u.membership==='pro'&&expDate<new Date())memBadge='<span class="badge badge-expired">已過期</span>';
+   expStr=expDate.toLocaleDateString();
+  }
+  var lastSeen=u.last_seen?u.last_seen.substring(0,10):'-';
+  var firstSeen=u.first_seen?u.first_seen.substring(0,10):'-';
+  return '<tr>'+
+   '<td><b>'+u.username+'</b></td>'+
+   '<td>'+(u.user_id||'-')+'</td>'+
+   '<td>'+memBadge+'</td>'+
+   '<td>'+expStr+'</td>'+
+   '<td>'+firstSeen+'</td>'+
+   '<td>'+lastSeen+'</td>'+
+   '<td class="row-actions">'+
+    '<button onclick="quickPro(\''+u.username+'\')">升Pro</button>'+
+    '<button class="danger" onclick="quickFree(\''+u.username+'\')">取消</button>'+
+   '</td></tr>';
+ }).join('');
+ 
+ // Paginator
+ var totalPages=Math.ceil(d.total/50)||1;
+ var pager=document.getElementById('usersPager');
+ pager.innerHTML=(page>1?'<button onclick="loadUsers('+(page-1)+')">←</button>':'')+
+  '<span>第 '+page+' / '+totalPages+' 頁 · 共 '+d.total+' 用戶</span>'+
+  (page<totalPages?'<button onclick="loadUsers('+(page+1)+')">→</button>':'');
+}
+
+async function quickPro(u){
+ if(!confirm('確定升級 '+u+' 為 Pro 30天？'))return;
+ var d=await api('/admin/user/'+encodeURIComponent(u)+'/membership','PUT',{membership:'pro',duration_days:30});
+ if(d.ok){flash('✅ '+u+' 已升級 Pro',true);loadUsers(currentPage);loadStats();}
+ else flash('❌ '+d.error,false);
+}
+
+async function quickFree(u){
+ if(!confirm('確定取消 '+u+' 的會員？'))return;
+ var d=await api('/admin/user/'+encodeURIComponent(u)+'/membership','PUT',{membership:'free',duration_days:0});
+ if(d.ok){flash('✅ '+u+' 已取消會員',true);loadUsers(currentPage);loadStats();}
+ else flash('❌ '+d.error,false);
+}
+
 async function lookupUser(){
  var u=document.getElementById('lookupUser').value.trim();
  if(!u)return flash('請輸入用戶名',false);
- try{
-  var d=await api('/admin/user/'+encodeURIComponent(u));
-  var el=document.getElementById('lookupResult');
-  el.style.display='block';
-  if(d.error){
-   el.textContent='❌ '+d.error;
-  }else{
-   el.innerHTML=formatUser(d);
-  }
- }catch(e){flash('錯誤: '+e.message,false);}
-}
-
-function formatUser(d){
- var u=d.user||d;
- var mem=u.membership||'free';
- var exp=u.expires_at;
- var badge='<span class="badge badge-'+mem+'">'+(mem==='pro'?'Pro':'Free')+'</span>';
- if(mem==='pro'&&exp){
-  var expDate=new Date(exp);
-  if(expDate<new Date())badge='<span class="badge badge-expired">已過期</span>';
-  else badge+=' <span style="color:#94a3b8;font-size:12px">到期: '+expDate.toLocaleDateString()+'</span>';
- }
+ var d=await api('/admin/user/'+encodeURIComponent(u));
+ var el=document.getElementById('lookupResult');
+ el.style.display='block';
+ if(d.error){el.textContent='❌ '+d.error;return;}
+ var u=d.user;
+ var mem=u.membership==='pro'?'Pro':'Free';
+ var exp=u.expires_at?new Date(u.expires_at*1000).toLocaleString():'無';
  var payments='';
  if(u.payments&&u.payments.length){
-  payments='\n\n💰 付款記錄:\n';
+  payments='\n\n💰 付款記錄 ('+u.payments.length+'):\n';
   u.payments.forEach(function(p){
-   payments+='  ['+new Date(p.date||p.timestamp).toLocaleDateString()+'] '+
-    (p.plan||p.method||'')+' ¥'+(p.amount||'?')+'\n';
+   payments+='  ['+p.date+'] '+(p.plan||'')+' '+(p.method||'')+' ¥'+(p.amount||'?')+(p.note?' ('+p.note+')':'')+'\n';
   });
  }
- return '📋 用戶: '+u.username+' (ID: '+u.id+')\n'+
-  '👑 會員: '+badge+'\n'+
-  (u.email?'📧 Email: '+u.email+'\n':'')+
+ el.textContent='📋 用戶: '+u.username+' (ID: '+(u.user_id||'-')+')\n'+
+  '👑 會員: '+mem+'\n'+
+  '📅 到期: '+exp+'\n'+
+  '🆕 首次: '+(u.first_seen||'-')+'\n'+
+  '🕐 最近: '+(u.last_seen||'-')+'\n'+
+  '📌 來源: '+(u.source||'-')+
   payments;
 }
 
@@ -236,45 +342,37 @@ async function setMembership(){
  var level=document.getElementById('memLevel').value;
  var dur=parseInt(document.getElementById('memDuration').value);
  if(!u)return flash('請輸入用戶名',false);
- try{
-  var d=await api('/admin/user/'+encodeURIComponent(u)+'/membership','PUT',{
-   membership:level,duration_days:dur
-  });
-  if(d.ok)flash('✅ 已設置 '+u+' 為 '+level+' ('+dur+'天)',true);
-  else flash('❌ '+d.error,false);
- }catch(e){flash('錯誤: '+e.message,false);}
-}
-
-async function revokeMembership(){
- var u=document.getElementById('memUser').value.trim();
- if(!u)return flash('請輸入用戶名',false);
- try{
-  var d=await api('/admin/user/'+encodeURIComponent(u)+'/membership','PUT',{
-   membership:'free',duration_days:0
-  });
-  if(d.ok)flash('✅ 已取消 '+u+' 的會員',true);
-  else flash('❌ '+d.error,false);
- }catch(e){flash('錯誤: '+e.message,false);}
+ var d=await api('/admin/user/'+encodeURIComponent(u)+'/membership','PUT',{membership:level,duration_days:dur});
+ if(d.ok){flash('✅ 已設置 '+u+' 為 '+level,true);loadStats();}
+ else flash('❌ '+d.error,false);
 }
 
 async function addPayment(){
  var u=document.getElementById('payUser').value.trim();
  if(!u)return flash('請輸入用戶名',false);
- var plan=document.getElementById('payPlan').value;
- var method=document.getElementById('payMethod').value;
- var amount=document.getElementById('payAmount').value;
- var note=document.getElementById('payNote').value;
- try{
-  var d=await api('/admin/user/'+encodeURIComponent(u)+'/payment','POST',{
-   plan:plan,method:method,amount:amount||null,note:note
-  });
-  if(d.ok)flash('✅ 已記錄 '+u+' 的付款',true);
-  else flash('❌ '+d.error,false);
- }catch(e){flash('錯誤: '+e.message,false);}
+ var d=await api('/admin/user/'+encodeURIComponent(u)+'/payment','POST',{
+  plan:document.getElementById('payPlan').value,
+  method:document.getElementById('payMethod').value,
+  amount:document.getElementById('payAmount').value||'',
+  note:document.getElementById('payNote').value||''
+ });
+ if(d.ok){flash('✅ 已記錄 '+u+' 的付款',true);loadPayments();}
+ else flash('❌ '+d.error,false);
+}
+
+async function loadPayments(){
+ var d=await api('/admin/payments');
+ if(!d.ok)return;
+ var area=document.getElementById('paymentsArea');
+ if(!d.payments.length){area.innerHTML='<p style="color:#94a3b8;padding:12px">暫無付款記錄</p>';return;}
+ area.innerHTML='<table><thead><tr><th>日期</th><th>用戶</th><th>方案</th><th>方式</th><th>金額</th><th>備註</th></tr></thead><tbody>'+
+  d.payments.map(function(p){
+   return '<tr><td>'+p.date+'</td><td>'+p.username+'</td><td>'+p.plan+'</td><td>'+p.method+'</td><td>¥'+(p.amount||'-')+'</td><td>'+(p.note||'-')+'</td></tr>';
+  }).join('')+'</tbody></table>';
 }
 
 async function batchSetMembership(){
- var users=document.getElementById('batchUsers').value.trim().split(/[,，\s]+/).filter(Boolean);
+ var users=document.getElementById('batchUsers').value.trim().split(/[,，\s\n]+/).filter(Boolean);
  var level=document.getElementById('batchMemLevel').value;
  var dur=parseInt(document.getElementById('batchDuration').value);
  if(!users.length)return flash('請輸入用戶名',false);
@@ -285,15 +383,17 @@ async function batchSetMembership(){
  for(var i=0;i<users.length;i++){
   var u=users[i];
   try{
-   var d=await api('/admin/user/'+encodeURIComponent(u)+'/membership','PUT',{
-    membership:level,duration_days:dur
-   });
-   results.push(u+': '+(d.ok?'✅':'❌ '+d.error));
+   var d=await api('/admin/user/'+encodeURIComponent(u)+'/membership','PUT',{membership:level,duration_days:dur});
+   results.push(u+': '+(d.ok?'✅':'❌ '+(d.error||'fail')));
   }catch(e){results.push(u+': ❌ '+e.message);}
  }
  el.textContent=results.join('\n');
  flash('批量操作完成',true);
+ loadStats();
 }
+
+// Auto-refresh stats every 30s
+setInterval(function(){if(TOKEN)loadStats();},30000);
 </script>
 </body>
 </html>
