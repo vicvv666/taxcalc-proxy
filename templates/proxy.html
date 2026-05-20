@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<script>
+// This page runs on Render.com inside an iframe in the APK
+// It acts as a fetch proxy - the parent (file://) can't fetch HTTPS directly
+// but this page (https://) can, because it has a proper origin
+
+window.addEventListener('message', async function(e) {
+  var d = e.data;
+  if (!d || !d._proxyReq) return;
+  try {
+    var opts = {method: d.method, headers: {'Content-Type':'application/json','Accept':'application/json'}};
+    if (d.auth) opts.headers['Authorization'] = d.auth;
+    if (d.body) opts.body = d.body;
+    var resp = await fetch(d.url, opts);
+    var text = await resp.text();
+    e.source.postMessage({_proxyResp: d.reqId, status: resp.status, body: text}, '*');
+  } catch(err) {
+    e.source.postMessage({_proxyResp: d.reqId, status: 0, body: JSON.stringify({error: err.message})}, '*');
+  }
+});
+
+// Signal ready to parent
+parent.postMessage({_proxyReady: true}, '*');
+</script>
+</body>
+</html>
