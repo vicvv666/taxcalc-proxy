@@ -4,13 +4,12 @@ Deployed on Render.com
 - Proxies all /api/* to CF Worker (bypasses workers.dev blocking)
 - Intercepts register/login to auto-capture all users
 - Adds /admin/* endpoints for membership management
-- Uses SQLite for persistent storage (survives Render restarts)
+- Uses GitHub repo for persistent storage (survives Render restarts)
 """
 import os
 import json
 import time
-import sqlite3
-import requests
+import requests as http_requests
 from flask import Flask, request, jsonify, send_from_directory
 
 app = Flask(__name__)
@@ -18,194 +17,199 @@ app = Flask(__name__)
 CF_WORKER_URL = 'https://taxcalc-api.vichoo2020.workers.dev'
 ADMIN_PASS = os.environ.get('ADMIN_PASS', 'taxcalc2025admin')
 
-# Use persistent storage on Render (/data is persistent on paid, /opt/render/project/src for free)
-# For free tier, use project src dir
-DATA_DIR = os.environ.get('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
-DB_FILE = os.path.join(DATA_DIR, 'taxcalc_admin.db')
+# GitHub persistence - store admin data in repo
+GH_TOKEN = os.environ.get('GH_TOKEN', '')
+GH_REPO = 'vicvv666/taxcalc-proxy'
+GH_FILE = 'data/admin_data.json'
+GH_API = f'https://api.github.com/repos/{GH_REPO}/contents/{GH_FILE}'
 
-# ============ SQLite Database ============
-def get_db():
-    db = sqlite3.connect(DB_FILE)
-    db.row_factory = sqlite3.Row
-    db.execute('PRAGMA journal_mode=WAL')
-    return db
+# ============ GitHub Data Store ============
+def load_data():
+    """Load admin data from GitHub repo"""
+    try:
+        if GH_TOKEN:
+            r = http_requests.get(GH_API, headers={
+                'Authorization': f'token {GH_TOKEN}',
+                'Accept': 'application/vnd.github.v3+json'
+            }, timeout=10)
+            if r.status_code == 200:
+                import base64
+                content = base64.b64decode(r.json()['content']).decode()
+                data = json.loads(content)
+                data['_sha'] = r.json()['sha']
+                return data
+    except Exception as e:
+        app.logger.warning(f'GitHub load error: {e}')
+    # Fallback: local file
+    try:
+        with open('data/admin_data.json', 'r') as f:
+            return json.load(f)
+    except:
+        return {'users': {}, 'payments': [], '_sha': ''}
 
-def init_db():
-    db = get_db()
-    db.executescript('''
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            user_id INTEGER,
-            membership TEXT DEFAULT 'free',
-            expires_at REAL,
-            first_seen TEXT,
-            last_seen TEXT,
-            source TEXT DEFAULT 'auto'
-        );
-        CREATE TABLE IF NOT EXISTS payments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            date TEXT,
-            plan TEXT,
-            method TEXT,
-            amount TEXT,
-            note TEXT
-        );
-        CREATE TABLE IF NOT EXISTS sync_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            action TEXT,
-            timestamp TEXT,
-            detail TEXT
-        );
-    ''')
-    db.commit()
-    db.close()
+def save_data(data):
+    """Save admin data to GitHub repo"""
+    save_data_local(data)
+    if not GH_TOKEN:
+        return
+    sha = data.pop('_sha', '')
+    import base64
+    content = base64.b64encode(json.dumps(data, ensure_ascii=False, indent=2).encode()).decode()
+    try:
+        r = http_requests.put(GH_API, headers={
+            'Authorization': f'token {GH_TOKEN}',
+            'Accept': 'application/vnd.github.v3+json'
+        }, json={
+            'message': f'admin data update {time.strftime("%Y-%m-%d %H:%M")}',
+            'content': content,
+            'sha': sha
+        }, timeout=15)
+        if r.status_code == 200:
+            data['_sha'] = r.json()['content']['sha']
+    except Exception as e:
+        app.logger.warning(f'GitHub save error: {e}')
 
-def upsert_user(username, user_id=None, membership=None, expires_at=None, source='auto'):
-    """Insert or update a user. Called on every register/login via proxy."""
-    db = get_db()
-    now = time.strftime('%Y-%m-%d %H:%M:%S')
-    existing = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
-    if existing:
-        updates = ['last_seen=?']
-        vals = [now]
-        if user_id: updates.append('user_id=?'); vals.append(user_id)
-        if membership and not existing['membership'] == 'pro': 
-            # Don't downgrade pro users from auto-capture
-            if membership != 'free':
-                updates.append('membership=?'); vals.append(membership)
-        if expires_at is not None:
-            updates.append('expires_at=?'); vals.append(expires_at)
-        vals.append(username)
-        db.execute(f"UPDATE users SET {','.join(updates)} WHERE username=?", vals)
-    else:
-        db.execute(
-            'INSERT INTO users (username, user_id, membership, expires_at, first_seen, last_seen, source) VALUES (?,?,?,?,?,?,?)',
-            (username, user_id, membership or 'free', expires_at, now, now, source)
-        )
-    db.commit()
-    db.close()
+def save_data_local(data):
+    """Also save locally as backup"""
+    try:
+        os.makedirs('data', exist_ok=True)
+        d = {k: v for k, v in data.items() if k != '_sha'}
+        with open('data/admin_data.json', 'w') as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+    except:
+        pass
 
-def get_user(username):
-    db = get_db()
-    u = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
-    db.close()
-    if not u:
-        return None
-    mem = u['membership']
-    exp = u['expires_at']
+# ============ User Management ============
+def get_membership(username):
+    data = load_data()
+    u = data['users'].get(username, {})
+    mem = u.get('membership', 'free')
+    exp = u.get('expires_at')
     if mem == 'pro' and exp and time.time() > exp:
         mem = 'free'
-    payments = get_payments(username)
-    return {
-        'username': u['username'],
-        'user_id': u['user_id'],
-        'membership': mem,
-        'expires_at': u['expires_at'],
-        'first_seen': u['first_seen'],
-        'last_seen': u['last_seen'],
-        'source': u['source'],
-        'payments': payments
-    }
+    return mem, u.get('expires_at'), u.get('payments', [])
 
-def get_payments(username):
-    db = get_db()
-    rows = db.execute('SELECT * FROM payments WHERE username=? ORDER BY date DESC', (username,)).fetchall()
-    db.close()
-    return [dict(r) for r in rows]
+def upsert_user(username, user_id=None, membership=None, expires_at=None, source='auto'):
+    data = load_data()
+    now = time.strftime('%Y-%m-%d %H:%M:%S')
+    if username in data['users']:
+        u = data['users'][username]
+        u['last_seen'] = now
+        if user_id: u['user_id'] = user_id
+        # Don't downgrade pro from auto-capture
+        if membership and membership != 'free' and u.get('membership') != 'pro':
+            u['membership'] = membership
+        if expires_at is not None and u.get('membership') == membership:
+            u['expires_at'] = expires_at
+    else:
+        data['users'][username] = {
+            'username': username,
+            'user_id': user_id,
+            'membership': membership or 'free',
+            'expires_at': expires_at,
+            'first_seen': now,
+            'last_seen': now,
+            'payments': [],
+            'source': source
+        }
+    save_data(data)
 
 def set_membership(username, membership, duration_days):
-    db = get_db()
+    data = load_data()
     now = time.strftime('%Y-%m-%d %H:%M:%S')
-    existing = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
-    if not existing:
-        db.execute(
-            'INSERT INTO users (username, membership, expires_at, first_seen, last_seen, source) VALUES (?,?,?,?,?,?)',
-            (username, membership, None, now, now, 'admin')
-        )
-        existing = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
-    
-    exp = None
+    if username not in data['users']:
+        data['users'][username] = {
+            'username': username, 'membership': 'free', 'expires_at': None,
+            'first_seen': now, 'last_seen': now, 'payments': [], 'source': 'admin'
+        }
+    u = data['users'][username]
+    u['membership'] = membership
+    u['last_seen'] = now
     if membership == 'pro' and duration_days > 0:
-        exp = time.time() + duration_days * 86400
-    
-    db.execute('UPDATE users SET membership=?, expires_at=?, last_seen=? WHERE username=?',
-               (membership, exp, now, username))
-    db.commit()
-    db.close()
-    return {'username': username, 'membership': membership, 'expires_at': exp}
+        u['expires_at'] = time.time() + duration_days * 86400
+    elif membership == 'free':
+        u['expires_at'] = None
+    save_data(data)
+    return {'username': username, 'membership': membership, 'expires_at': u['expires_at']}
 
 def add_payment(username, plan, method, amount, note=''):
-    db = get_db()
+    data = load_data()
     now = time.strftime('%Y-%m-%d %H:%M:%S')
-    # Ensure user exists
-    existing = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
-    if not existing:
-        db.execute(
-            'INSERT INTO users (username, membership, expires_at, first_seen, last_seen, source) VALUES (?,?,?,?,?,?)',
-            (username, 'free', None, now, now, 'admin')
-        )
-    db.execute(
-        'INSERT INTO payments (username, date, plan, method, amount, note) VALUES (?,?,?,?,?,?)',
-        (username, now, plan, method, amount, note)
-    )
-    db.commit()
-    pay_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-    db.close()
-    return {'id': pay_id, 'username': username, 'date': now, 'plan': plan, 'method': method, 'amount': amount, 'note': note}
+    if username not in data['users']:
+        data['users'][username] = {
+            'username': username, 'membership': 'free', 'expires_at': None,
+            'first_seen': now, 'last_seen': now, 'payments': [], 'source': 'admin'
+        }
+    payment = {'date': now, 'plan': plan, 'method': method, 'amount': amount, 'note': note}
+    data['users'][username]['payments'].append(payment)
+    data['payments'].append({'username': username, **payment})
+    save_data(data)
+    return payment
 
-def list_users(page=1, per_page=50, filter_mem=None):
-    db = get_db()
-    offset = (page - 1) * per_page
+def list_users(page=1, per_page=50, filter_mem=None, search=None):
+    data = load_data()
+    now = time.time()
+    all_users = list(data['users'].values())
+    # Apply filter
     if filter_mem:
-        total = db.execute('SELECT COUNT(*) FROM users WHERE membership=?', (filter_mem,)).fetchone()[0]
-        rows = db.execute('SELECT * FROM users WHERE membership=? ORDER BY last_seen DESC LIMIT ? OFFSET ?',
-                          (filter_mem, per_page, offset)).fetchall()
-    else:
-        total = db.execute('SELECT COUNT(*) FROM users').fetchone()[0]
-        rows = db.execute('SELECT * FROM users ORDER BY last_seen DESC LIMIT ? OFFSET ?',
-                          (per_page, offset)).fetchall()
-    db.close()
-    users = []
-    for r in rows:
-        mem = r['membership']
-        exp = r['expires_at']
-        if mem == 'pro' and exp and time.time() > exp:
+        filtered = []
+        for u in all_users:
+            mem = u.get('membership', 'free')
+            exp = u.get('expires_at')
+            if mem == 'pro' and exp and now > exp:
+                mem = 'free'
+            if mem == filter_mem:
+                filtered.append(u)
+        all_users = filtered
+    if search:
+        all_users = [u for u in all_users if search.lower() in u.get('username', '').lower()]
+    # Sort by last_seen desc
+    all_users.sort(key=lambda u: u.get('last_seen', ''), reverse=True)
+    total = len(all_users)
+    offset = (page - 1) * per_page
+    page_users = all_users[offset:offset + per_page]
+    result_users = []
+    for u in page_users:
+        mem = u.get('membership', 'free')
+        exp = u.get('expires_at')
+        if mem == 'pro' and exp and now > exp:
             mem = 'free'
-        pay_count = len(get_payments(r['username']))
-        users.append({
-            'username': r['username'],
-            'user_id': r['user_id'],
+        result_users.append({
+            'username': u['username'],
+            'user_id': u.get('user_id'),
             'membership': mem,
             'expires_at': exp,
-            'first_seen': r['first_seen'],
-            'last_seen': r['last_seen'],
-            'payments_count': pay_count,
-            'source': r['source']
+            'first_seen': u.get('first_seen'),
+            'last_seen': u.get('last_seen'),
+            'payments_count': len(u.get('payments', [])),
+            'source': u.get('source', 'auto')
         })
-    return {'total': total, 'page': page, 'per_page': per_page, 'users': users}
+    return {'total': total, 'page': page, 'per_page': per_page, 'users': result_users}
 
 def get_stats():
-    db = get_db()
-    total = db.execute('SELECT COUNT(*) FROM users').fetchone()[0]
-    pro = db.execute("SELECT COUNT(*) FROM users WHERE membership='pro'").fetchone()[0]
+    data = load_data()
+    now = time.time()
+    week_ago = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now - 7*86400))
+    total = len(data['users'])
+    pro = 0
     pro_active = 0
-    pro_rows = db.execute("SELECT expires_at FROM users WHERE membership='pro'").fetchall()
-    for r in pro_rows:
-        if r['expires_at'] and time.time() <= r['expires_at']:
-            pro_active += 1
-    payments_total = db.execute('SELECT COUNT(*) FROM payments').fetchone()[0]
-    recent = db.execute(
-        "SELECT COUNT(*) FROM users WHERE last_seen >= datetime('now', '-7 days')"
-    ).fetchone()[0]
-    db.close()
+    active_7d = 0
+    for u in data['users'].values():
+        mem = u.get('membership', 'free')
+        exp = u.get('expires_at')
+        if mem == 'pro':
+            pro += 1
+            if exp and now <= exp:
+                pro_active += 1
+        if u.get('last_seen', '') >= week_ago:
+            active_7d += 1
     return {
         'total_users': total,
         'pro_users': pro,
         'pro_active': pro_active,
         'free_users': total - pro,
-        'total_payments': payments_total,
-        'active_7d': recent
+        'total_payments': len(data.get('payments', [])),
+        'active_7d': active_7d
     }
 
 # ============ CORS Helper ============
@@ -240,7 +244,7 @@ def proxy_api(subpath=''):
         body = request.get_data()
 
     try:
-        resp = requests.request(
+        resp = http_requests.request(
             method=request.method,
             url=target_url,
             headers=fwd_headers,
@@ -248,39 +252,24 @@ def proxy_api(subpath=''):
             timeout=15,
         )
         
-        # Auto-capture users from register/login responses
+        # Auto-capture users from register/login/user responses
         try:
             if resp.status_code == 200:
                 rjson = resp.json()
-                # Capture from register
                 if subpath == 'register' and rjson.get('ok') and rjson.get('user'):
                     u = rjson['user']
-                    upsert_user(
-                        u['username'],
-                        u.get('id'),
-                        u.get('membership', 'free'),
-                        u.get('expires_at'),
-                        'register'
-                    )
-                # Capture from login
+                    upsert_user(u['username'], u.get('id'), u.get('membership', 'free'), u.get('expires_at'), 'register')
                 elif subpath == 'login' and rjson.get('ok') and rjson.get('user'):
                     u = rjson['user']
-                    upsert_user(
-                        u['username'],
-                        u.get('id'),
-                        u.get('membership', 'free'),
-                        u.get('expires_at'),
-                        'login'
-                    )
-                # Enrich /api/user with admin membership data
-                elif subpath == 'user' and rjson.get('user') and rjson.get('user', {}).get('username'):
+                    upsert_user(u['username'], u.get('id'), u.get('membership', 'free'), u.get('expires_at'), 'login')
+                elif subpath == 'user' and rjson.get('user') and rjson['user'].get('username'):
                     uname = rjson['user']['username']
-                    admin_user = get_user(uname)
-                    if admin_user and admin_user['membership'] != 'free':
-                        rjson['user']['membership'] = admin_user['membership']
-                        rjson['user']['expires_at'] = admin_user['expires_at']
-                        rjson['admin_payments'] = admin_user['payments']
-                    # Also capture/update user
+                    # Enrich with admin membership data
+                    admin_mem, admin_exp, admin_pay = get_membership(uname)
+                    if admin_mem != 'free':
+                        rjson['user']['membership'] = admin_mem
+                        rjson['user']['expires_at'] = admin_exp
+                        rjson['admin_payments'] = admin_pay
                     upsert_user(uname, rjson['user'].get('id'), rjson['user'].get('membership'), rjson['user'].get('expires_at'), 'api_user')
                     response = app.response_class(
                         response=json.dumps(rjson, ensure_ascii=False),
@@ -330,7 +319,8 @@ def admin_list_users():
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
     filter_mem = request.args.get('membership', None)
-    result = list_users(page, per_page, filter_mem)
+    search = request.args.get('search', None)
+    result = list_users(page, per_page, filter_mem, search)
     stats = get_stats()
     return cors_resp({'ok': True, **result, **stats})
 
@@ -338,10 +328,17 @@ def admin_list_users():
 def admin_get_user(username):
     if not check_admin():
         return cors_resp({'error': 'Unauthorized'}, 401)
-    u = get_user(username)
+    data = load_data()
+    u = data['users'].get(username)
     if not u:
         return cors_resp({'ok': True, 'user': {'username': username, 'membership': 'free', 'expires_at': None, 'payments': []}})
-    return cors_resp({'ok': True, 'user': u})
+    mem, exp, pay = get_membership(username)
+    return cors_resp({'ok': True, 'user': {
+        'username': username, 'user_id': u.get('user_id'),
+        'membership': mem, 'expires_at': exp,
+        'first_seen': u.get('first_seen'), 'last_seen': u.get('last_seen'),
+        'source': u.get('source'), 'payments': pay
+    }})
 
 @app.route('/admin/user/<username>/membership', methods=['PUT', 'OPTIONS'])
 def admin_set_membership(username):
@@ -381,10 +378,8 @@ def admin_stats():
 def admin_all_payments():
     if not check_admin():
         return cors_resp({'error': 'Unauthorized'}, 401)
-    db = get_db()
-    rows = db.execute('SELECT * FROM payments ORDER BY date DESC LIMIT 100').fetchall()
-    db.close()
-    return cors_resp({'ok': True, 'payments': [dict(r) for r in rows]})
+    data = load_data()
+    return cors_resp({'ok': True, 'payments': data.get('payments', [])[-100:]})
 
 # ============ Admin Panel ============
 @app.route('/admin')
@@ -396,6 +391,6 @@ def health():
     return jsonify({'ok': True, 'service': '税算寶 API Proxy + Admin', 'target': CF_WORKER_URL})
 
 if __name__ == '__main__':
-    init_db()
+    os.makedirs('data', exist_ok=True)
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
