@@ -36,7 +36,7 @@ def get_membership(username):
     exp = u.get('expires_at')
     if mem == 'pro' and exp:
         try:
-            if time.time() > exp / 1000 if exp > 1e12 else exp:
+            if time.time() > exp:
                 mem = 'free'  # expired
         except:
             pass
